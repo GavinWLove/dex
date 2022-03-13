@@ -1,0 +1,273 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dex
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: dex
+  name: dex
+  namespace: dex
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: dex
+  template:
+    metadata:
+      labels:
+        app: dex
+    spec:
+      serviceAccountName: dex # This is created below
+      containers:
+      - image: ghcr.io/dexidp/dex:v2.30.0
+        name: dex
+        command: ["/usr/local/bin/dex", "serve", "/etc/dex/cfg/config.yaml"]
+
+        ports:
+        - name: https
+          containerPort: 5556
+
+        volumeMounts:
+        - name: config
+          mountPath: /etc/dex/cfg
+        - name: tls
+          mountPath: /etc/dex/tls
+
+        env:
+        - name: GITHUB_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: github-client
+              key: client-id
+        - name: GITHUB_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: github-client
+              key: client-secret
+
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 5556
+            scheme: HTTPS
+      volumes:
+      - name: config
+        configMap:
+          name: dex
+          items:
+          - key: config.yaml
+            path: config.yaml
+      - name: tls
+        secret:
+          secretName: dex.example.com.tls
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: dex
+  namespace: dex
+data:
+  config.yaml: |
+    issuer: http://172.17.244.97:5556/dex
+    storage:
+        type: mysql
+        config:
+            host: 192.168.3.170
+            port: 3306
+            database: dex
+            user: root
+            password: 123qweASD
+            ssl:
+                mode: "false"
+    web:
+        http: 172.17.244.97:5556
+    telemetry:
+        http: 172.17.244.97:5558
+    # Options for controlling the logger.
+    logger:
+        level: "debug"
+        format: "text" # can also be "json"
+
+    # Default values shown below
+    oauth2:
+        skipApprovalScreen: true
+
+    # Instead of reading from an external storage, use this list of clients.
+    #
+    # If this option isn't chosen clients may be added through the gRPC API.
+    staticClients:
+        - id: example-app
+            #  redirectURIs:
+            #  - 'http://172.17.244.97:5555/callback'
+          name: 'Example App'
+          secret: ZXhhbXBsZS1hcHAtc2VjcmV0
+    connectors:
+        - type: ldap
+          name: OpenLDAP
+          id: ldap
+          config:
+              # The following configurations seem to work with OpenLDAP:
+              #
+              # 1) Plain LDAP, without TLS:
+              host: 192.168.1.98
+              insecureNoSSL: true
+              #
+              # 2) LDAPS without certificate validation:
+              #host: localhost:636
+              #insecureNoSSL: false
+              #insecureSkipVerify: true
+              #
+              # 3) LDAPS with certificate validation:
+              #host: YOUR-HOSTNAME:636
+              #insecureNoSSL: false
+              #insecureSkipVerify: false
+              #rootCAData: 'CERT'
+              # ...where CERT="$( base64 -w 0 your-cert.crt )"
+
+              # This would normally be a read-only user.
+              bindDN: administrator
+              bindPW: Adadmin@jk888
+
+              usernamePrompt: Email Address
+
+              userSearch:
+                  baseDN: DC=jktest,DC=cn
+                  filter: "(objectClass=user)"
+                  username: userPrincipalName
+                  # "DN" (case sensitive) is a special attribute name. It indicates that
+                  # this value should be taken from the entity's DN not an attribute on
+                  # the entity.
+                  idAttr: DN
+                  emailAttr: userPrincipalName
+                  nameAttr: sAMAccountName
+
+        - type: mockCallback
+          id: mock
+          name: Example
+        - type: wecom
+            # Required field for connector id.
+          id: wecom
+            # Required field for connector name.
+          name: wecom
+          config:
+              # Credentials can be string literals or pulled from the environment.
+              corpId: wx227c3136c137e769
+              corpSecret: mImrlXelFEj9kwxzUdb4lsMiAfN4zJpp7PQEqenH6ng
+              agentId: "1000026"
+              clientSecret: 331340bcbd65409cd5c8b31ffbb964acf9577366
+              redirectURI: http://cmdp.dev.jingkunsystem.com:19041
+              accessTokenURI: https://qyapi.weixin.qq.com/cgi-bin/gettoken
+              userIdURI: https://qyapi.weixin.qq.com/cgi-bin/user/getuserinfo
+              userInfoURI: https://qyapi.weixin.qq.com/cgi-bin//user/get
+              qrConnectURI: https://open.work.weixin.qq.com/wwopen/sso/v1/qrConnect
+
+        - type: github
+            # Required field for connector id.
+          id: github
+            # Required field for connector name.
+          name: GitHub
+          config:
+              # Credentials can be string literals or pulled from the environment.
+              clientID: 109dbbbfde48539699c4
+              clientSecret: 331340bcbd65409cd5c8b31ffbb964acf9577366
+              redirectURI: http://172.17.244.97:5556/dex/callback
+
+            # Optional organizations and teams, communicated through the "groups" scope.
+            #
+            # NOTE: This is an EXPERIMENTAL config option and will likely change.
+            #
+            # Legacy 'org' field. 'org' and 'orgs' cannot be used simultaneously. A user
+            # MUST be a member of the following org to authenticate with dex.
+            # org: my-organization
+            #
+            # Dex queries the following organizations for group information if the
+            # "groups" scope is provided. Group claims are formatted as "(org):(team)".
+            # For example if a user is part of the "engineering" team of the "coreos"
+            # org, the group claim would include "coreos:engineering".
+            #
+            # If orgs are specified in the config then user MUST be a member of at least one of the specified orgs to
+            # authenticate with dex.
+            #
+            # If neither 'org' nor 'orgs' are specified in the config and 'loadAllGroups' setting set to true then user
+            # authenticate with ALL user's Github groups. Typical use case for this setup:
+            # provide read-only access to everyone and give full permissions if user has 'my-organization:admins-team' group claim.
+            # Flag which indicates that all user groups and teams should be loaded.
+          loadAllGroups: true
+
+            # Optional choice between 'name' (default), 'slug', or 'both'.
+            #
+            # As an example, group claims for member of 'Site Reliability Engineers' in
+            # Acme organization would yield:
+            #   - ['acme:Site Reliability Engineers'] for 'name'
+            #   - ['acme:site-reliability-engineers'] for 'slug'
+            #   - ['acme:Site Reliability Engineers', 'acme:site-reliability-engineers'] for 'both'
+
+            # flag which will switch from using the internal GitHub id to the users handle (@mention) as the user id.
+            # It is possible for a user to change their own user name but it is very rare for them to do so
+          useLoginAsID: false
+    # Let dex keep a list of passwords which can be used to login to dex.
+    enablePasswordDB: true
+
+    # A static list of passwords to login the end user. By identifying here, dex
+    # won't look in its underlying storage for passwords.
+    #
+    # If this option isn't chosen users may be added through the gRPC API.
+    staticPasswords:
+        - email: "admin@example.com"
+            # bcrypt hash of the string "password": $(echo password | htpasswd -BinC 10 admin | cut -d: -f2)
+          hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+          username: "admin"
+          userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dex
+  namespace: dex
+spec:
+  type: NodePort
+  ports:
+  - name: dex
+    port: 5556
+    protocol: TCP
+    targetPort: 5556
+    nodePort: 32000
+  selector:
+    app: dex
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app: dex
+  name: dex
+  namespace: dex
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dex
+rules:
+- apiGroups: ["dex.coreos.com"] # API group created by dex
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["create"] # To manage its own resources, dex must be able to create customresourcedefinitions
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dex
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dex
+subjects:
+- kind: ServiceAccount
+  name: dex           # Service account assigned to the dex pod, created above
+  namespace: dex  # The namespace dex is running in

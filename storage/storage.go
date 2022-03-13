@@ -173,6 +173,7 @@ type Claims struct {
 	PreferredUsername string
 	Email             string
 	EmailVerified     bool
+	PhoneNumber	string
 
 	Groups []string
 }

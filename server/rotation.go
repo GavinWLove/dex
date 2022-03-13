@@ -174,6 +174,8 @@ func (k keyRotator) rotate() error {
 	if err != nil {
 		return err
 	}
+	k.logger.Infof("keys rotated, current time: %s", k.now())
+	k.logger.Infof("keys rotated, rotation frequency time: %s", k.strategy.rotationFrequency)
 	k.logger.Infof("keys rotated, next rotation: %s", nextRotation)
 	return nil
 }

@@ -127,6 +127,7 @@ var migrations = []migration{
 
 				claims_user_id text not null,
 				claims_username text not null,
+
 				claims_email text not null,
 				claims_email_verified boolean not null,
 				claims_groups bytea not null, -- JSON array of strings
@@ -279,6 +280,19 @@ var migrations = []migration{
 			`
 			alter table refresh_token
 				add column obsolete_token text default '';`,
+		},
+	},
+	{
+		stmts: []string{
+			`
+			alter table refresh_token
+				add column claims_phone_number text default '';`,
+			`
+			alter table auth_code
+				add column claims_phone_number text default '';`,
+			`
+			alter table auth_request
+				add column claims_phone_number text default '';`,
 		},
 	},
 }

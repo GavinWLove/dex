@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dexidp/dex/connector/wecom"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -381,6 +382,7 @@ func newServer(ctx context.Context, c Config, rotationStrategy rotationStrategy)
 		fmt.Fprintf(w, "Health check passed")
 	}))
 
+	handleFunc("/connector/list", s.listConnectors)
 	handlePrefix("/static", static)
 	handlePrefix("/theme", theme)
 	s.mux = r
@@ -420,6 +422,7 @@ type passwordDB struct {
 }
 
 func (db passwordDB) Login(ctx context.Context, s connector.Scopes, email, password string) (connector.Identity, bool, error) {
+
 	p, err := db.s.GetPassword(email)
 	if err != nil {
 		if err != storage.ErrNotFound {
@@ -531,6 +534,7 @@ type ConnectorConfig interface {
 // depending on the connector type.
 var ConnectorsConfig = map[string]func() ConnectorConfig{
 	"keystone":        func() ConnectorConfig { return new(keystone.Config) },
+	"wecom":        func() ConnectorConfig { return new(wecom.Config) },
 	"mockCallback":    func() ConnectorConfig { return new(mock.CallbackConfig) },
 	"mockPassword":    func() ConnectorConfig { return new(mock.PasswordConfig) },
 	"ldap":            func() ConnectorConfig { return new(ldap.Config) },

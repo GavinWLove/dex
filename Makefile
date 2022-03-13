@@ -6,7 +6,8 @@ PROJ=dex
 ORG_PATH=github.com/dexidp
 REPO_PATH=$(ORG_PATH)/$(PROJ)
 
-VERSION ?= $(shell ./scripts/git-version)
+#VERSION ?= $(shell ./scripts/git-version)
+VERSION = debug
 
 DOCKER_REPO=quay.io/dexidp/dex
 DOCKER_IMAGE=$(DOCKER_REPO):$(VERSION)

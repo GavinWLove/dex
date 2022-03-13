@@ -271,6 +271,7 @@ type idTokenClaims struct {
 	CodeHash        string `json:"c_hash,omitempty"`
 
 	Email         string `json:"email,omitempty"`
+	PhoneNumber         string `json:"phone_number,omitempty"`
 	EmailVerified *bool  `json:"email_verified,omitempty"`
 
 	Groups []string `json:"groups,omitempty"`
@@ -346,6 +347,9 @@ func (s *Server) newIDToken(clientID string, claims storage.Claims, scopes []str
 		}
 		tok.CodeHash = cHash
 	}
+	if claims.PhoneNumber != "" {
+		tok.PhoneNumber = claims.PhoneNumber
+	}
 
 	for _, scope := range scopes {
 		switch {
@@ -413,8 +417,10 @@ func (s *Server) parseAuthorizationRequest(r *http.Request) (*storage.AuthReques
 		return nil, newDisplayedErr(http.StatusBadRequest, "Failed to parse request.")
 	}
 	q := r.Form
-	redirectURI, err := url.QueryUnescape(q.Get("redirect_uri"))
-	if err != nil {
+	//redirectURI, err := url.QueryUnescape(q.Get("redirect_uri"))
+	//TODO FIXED BY wangwei
+	redirectURI := q.Get("redirect_uri")
+	if redirectURI == "" {
 		return nil, newDisplayedErr(http.StatusBadRequest, "No redirect_uri provided.")
 	}
 
@@ -613,6 +619,8 @@ func validateRedirectURI(client storage.Client, redirectURI string) bool {
 			return true
 		}
 	}
+	//TODO by wangwei for test
+	return true
 	// For non-public clients or when RedirectURIs is set, we allow only explicitly named RedirectURIs.
 	// Otherwise, we check below for special URIs used for desktop or mobile apps.
 	if !client.Public || len(client.RedirectURIs) > 0 {

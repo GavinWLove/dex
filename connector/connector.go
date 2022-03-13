@@ -28,7 +28,7 @@ type Identity struct {
 	PreferredUsername string
 	Email             string
 	EmailVerified     bool
-
+	PhoneNumber string
 	Groups []string
 
 	// ConnectorData holds data used by the connector for subsequent requests after initial

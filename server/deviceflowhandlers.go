@@ -144,7 +144,7 @@ func (s *Server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 		enc := json.NewEncoder(w)
 		enc.SetEscapeHTML(false)
 		enc.SetIndent("", "   ")
-		enc.Encode(code)
+		enc.Encode(code)// write json for response
 
 	default:
 		s.renderError(r, w, http.StatusBadRequest, "Invalid device code request type")

@@ -29,6 +29,7 @@ const (
 )
 
 func (s *Server) handlePublicKeys(w http.ResponseWriter, r *http.Request) {
+	s.logger.Infof("handlePublicKeys")
 	// TODO(ericchiang): Cache this.
 	keys, err := s.storage.GetKeys()
 	if err != nil {
@@ -86,6 +87,7 @@ type discovery struct {
 }
 
 func (s *Server) discoveryHandler() (http.HandlerFunc, error) {
+	s.logger.Infof("discoveryHandler")
 	d := discovery{
 		Issuer:            s.issuerURL.String(),
 		Auth:              s.absURL("/auth"),
@@ -125,6 +127,7 @@ func (s *Server) discoveryHandler() (http.HandlerFunc, error) {
 
 // handleAuthorization handles the OAuth2 auth endpoint.
 func (s *Server) handleAuthorization(w http.ResponseWriter, r *http.Request) {
+	s.logger.Infof("handleAuthorization")
 	// Extract the arguments
 	if err := r.ParseForm(); err != nil {
 		s.logger.Errorf("Failed to parse arguments: %v", err)
@@ -184,7 +187,9 @@ func (s *Server) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+
 func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
+	s.logger.Infof("handleConnectorLogin")
 	authReq, err := s.parseAuthorizationRequest(r)
 	if err != nil {
 		s.logger.Errorf("Failed to parse authorization request: %v", err)
@@ -297,6 +302,7 @@ func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
+	s.logger.Infof("handlePasswordLogin")
 	authID := r.URL.Query().Get("state")
 	if authID == "" {
 		s.renderError(r, w, http.StatusBadRequest, "User session error.")
@@ -373,6 +379,7 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConnectorCallback(w http.ResponseWriter, r *http.Request) {
+	s.logger.Infof("handleConnectorCallback")
 	var authID string
 	switch r.Method {
 	case http.MethodGet: // OAuth2 callback
@@ -455,6 +462,7 @@ func (s *Server) handleConnectorCallback(w http.ResponseWriter, r *http.Request)
 // finalizeLogin associates the user's identity with the current AuthRequest, then returns
 // the approval page's path.
 func (s *Server) finalizeLogin(identity connector.Identity, authReq storage.AuthRequest, conn connector.Connector) (string, error) {
+	s.logger.Infof("finalizeLogin")
 	claims := storage.Claims{
 		UserID:            identity.UserID,
 		Username:          identity.Username,
@@ -462,6 +470,7 @@ func (s *Server) finalizeLogin(identity connector.Identity, authReq storage.Auth
 		Email:             identity.Email,
 		EmailVerified:     identity.EmailVerified,
 		Groups:            identity.Groups,
+		PhoneNumber: identity.PhoneNumber,
 	}
 
 	updater := func(a storage.AuthRequest) (storage.AuthRequest, error) {
@@ -527,6 +536,7 @@ func (s *Server) finalizeLogin(identity connector.Identity, authReq storage.Auth
 }
 
 func (s *Server) handleApproval(w http.ResponseWriter, r *http.Request) {
+	s.logger.Infof("handleApproval")
 	authReq, err := s.storage.GetAuthRequest(r.FormValue("req"))
 	if err != nil {
 		s.logger.Errorf("Failed to get auth request: %v", err)
@@ -564,6 +574,7 @@ func (s *Server) handleApproval(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sendCodeResponse(w http.ResponseWriter, r *http.Request, authReq storage.AuthRequest) {
+	s.logger.Infof("sendCodeResponse")
 	if s.now().After(authReq.Expiry) {
 		s.renderError(r, w, http.StatusBadRequest, "User session has expired.")
 		return
@@ -701,6 +712,7 @@ func (s *Server) sendCodeResponse(w http.ResponseWriter, r *http.Request, authRe
 }
 
 func (s *Server) withClientFromStorage(w http.ResponseWriter, r *http.Request, handler func(http.ResponseWriter, *http.Request, storage.Client)) {
+	s.logger.Infof("withClientFromStorage")
 	clientID, clientSecret, ok := r.BasicAuth()
 	if ok {
 		var err error
@@ -742,6 +754,7 @@ func (s *Server) withClientFromStorage(w http.ResponseWriter, r *http.Request, h
 }
 
 func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
+	s.logger.Infof("handleToken")
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
 		s.tokenErrHelper(w, errInvalidRequest, "method not allowed", http.StatusBadRequest)
@@ -771,6 +784,7 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) calculateCodeChallenge(codeVerifier, codeChallengeMethod string) (string, error) {
+	s.logger.Infof("calculateCodeChallenge")
 	switch codeChallengeMethod {
 	case codeChallengeMethodPlain:
 		return codeVerifier, nil
@@ -784,6 +798,7 @@ func (s *Server) calculateCodeChallenge(codeVerifier, codeChallengeMethod string
 
 // handle an access token request https://tools.ietf.org/html/rfc6749#section-4.1.3
 func (s *Server) handleAuthCode(w http.ResponseWriter, r *http.Request, client storage.Client) {
+	s.logger.Infof("handleAuthCode")
 	code := r.PostFormValue("code")
 	redirectURI := r.PostFormValue("redirect_uri")
 
@@ -841,8 +856,9 @@ func (s *Server) handleAuthCode(w http.ResponseWriter, r *http.Request, client s
 	}
 	s.writeAccessToken(w, tokenResponse)
 }
-
+//
 func (s *Server) exchangeAuthCode(w http.ResponseWriter, authCode storage.AuthCode, client storage.Client) (*accessTokenResponse, error) {
+	s.logger.Infof("exchangeAuthCode")
 	accessToken, err := s.newAccessToken(client.ID, authCode.Claims, authCode.Scopes, authCode.Nonce, authCode.ConnectorID)
 	if err != nil {
 		s.logger.Errorf("failed to create new access token: %v", err)
@@ -988,6 +1004,7 @@ func (s *Server) exchangeAuthCode(w http.ResponseWriter, authCode storage.AuthCo
 }
 
 func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
+	s.logger.Infof("handleUserInfo")
 	const prefix = "Bearer "
 
 	auth := r.Header.Get("authorization")
@@ -1016,6 +1033,7 @@ func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePasswordGrant(w http.ResponseWriter, r *http.Request, client storage.Client) {
+	s.logger.Infof("handlePasswordGrant")
 	// Parse the fields
 	if err := r.ParseForm(); err != nil {
 		s.tokenErrHelper(w, errInvalidRequest, "Couldn't parse data", http.StatusBadRequest)
@@ -1254,6 +1272,7 @@ type accessTokenResponse struct {
 }
 
 func (s *Server) toAccessTokenResponse(idToken, accessToken, refreshToken string, expiry time.Time) *accessTokenResponse {
+	s.logger.Infof("toAccessTokenResponse")
 	return &accessTokenResponse{
 		accessToken,
 		"bearer",
@@ -1264,6 +1283,7 @@ func (s *Server) toAccessTokenResponse(idToken, accessToken, refreshToken string
 }
 
 func (s *Server) writeAccessToken(w http.ResponseWriter, resp *accessTokenResponse) {
+	s.logger.Infof("writeAccessToken")
 	data, err := json.Marshal(resp)
 	if err != nil {
 		s.logger.Errorf("failed to marshal access token response: %v", err)

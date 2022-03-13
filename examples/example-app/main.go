@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -37,6 +39,8 @@ type app struct {
 	offlineAsScope bool
 
 	client *http.Client
+
+	IssuerURL string
 }
 
 // return an HTTP client which trusts the provided root CAs.
@@ -141,6 +145,7 @@ func cmd() *cobra.Command {
 			// TODO(ericchiang): Retry with backoff
 			ctx := oidc.ClientContext(context.Background(), a.client)
 			provider, err := oidc.NewProvider(ctx, issuerURL)
+			a.IssuerURL = issuerURL
 			if err != nil {
 				return fmt.Errorf("failed to query provider %q: %v", issuerURL, err)
 			}
@@ -175,9 +180,11 @@ func cmd() *cobra.Command {
 			a.provider = provider
 			a.verifier = provider.Verifier(&oidc.Config{ClientID: a.clientID})
 
-			http.HandleFunc("/", a.handleIndex)
-			http.HandleFunc("/login", a.handleLogin)
-			http.HandleFunc(u.Path, a.handleCallback)
+			//http.HandleFunc("/", a.handleIndex)// render login page
+			//http.HandleFunc("/login", a.handleLogin)
+			http.HandleFunc(u.Path, a.handleCallback)//path is "/callback"
+			//http.HandleFunc("/test/biz/callback", a.callbackBiz)//path is "/test/biz/callback"
+			http.HandleFunc("/loginPage", a.loginPage)//path is "/test/biz/callback"
 
 			switch listenURL.Scheme {
 			case "http":
@@ -193,13 +200,14 @@ func cmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&a.clientID, "client-id", "example-app", "OAuth2 client ID of this application.")
 	c.Flags().StringVar(&a.clientSecret, "client-secret", "ZXhhbXBsZS1hcHAtc2VjcmV0", "OAuth2 client secret of this application.")
-	c.Flags().StringVar(&a.redirectURI, "redirect-uri", "http://127.0.0.1:5555/callback", "Callback URL for OAuth2 responses.")
-	c.Flags().StringVar(&issuerURL, "issuer", "http://127.0.0.1:5556/dex", "URL of the OpenID Connect issuer.")
-	c.Flags().StringVar(&listen, "listen", "http://127.0.0.1:5555", "HTTP(S) address to listen at.")
+	//TODO ?dd=1 by wangwei for test
+	c.Flags().StringVar(&a.redirectURI, "redirect-uri", "http://172.17.241.134:5555/callback", "Callback URL for OAuth2 responses.")
+	c.Flags().StringVar(&issuerURL, "issuer", "http://172.17.241.134:5556/dex", "URL of the OpenID Connect issuer.")
+	c.Flags().StringVar(&listen, "listen", "http://172.17.241.134:5555", "HTTP(S) address to listen at.")
 	c.Flags().StringVar(&tlsCert, "tls-cert", "", "X509 cert file to present when serving HTTPS.")
 	c.Flags().StringVar(&tlsKey, "tls-key", "", "Private key for the HTTPS cert.")
 	c.Flags().StringVar(&rootCAs, "issuer-root-ca", "", "Root certificate authorities for the issuer. Defaults to host certs.")
-	c.Flags().BoolVar(&debug, "debug", false, "Print all request and responses from the OpenID Connect issuer.")
+	c.Flags().BoolVar(&debug, "debug", true, "Print all request and responses from the OpenID Connect issuer.")
 	return &c
 }
 
@@ -221,6 +229,16 @@ func (a *app) oauth2Config(scopes []string) *oauth2.Config {
 		Endpoint:     a.provider.Endpoint(),
 		Scopes:       scopes,
 		RedirectURL:  a.redirectURI,
+	}
+}
+
+func (a *app) oauth2Config2(scopes []string,orignUri string) *oauth2.Config {
+	return &oauth2.Config{
+		ClientID:     a.clientID,
+		ClientSecret: a.clientSecret,
+		Endpoint:     a.provider.Endpoint(),
+		Scopes:       scopes,
+		RedirectURL:  RedirectUri(a.redirectURI,orignUri),
 	}
 }
 
@@ -263,9 +281,13 @@ func (a *app) handleCallback(w http.ResponseWriter, r *http.Request) {
 		err   error
 		token *oauth2.Token
 	)
+	originUri :=r.Header.Get("origin_uri")
+	if originUri == "" {
+		originUri =r.URL.Query().Get("origin_uri")
+	}
 
 	ctx := oidc.ClientContext(r.Context(), a.client)
-	oauth2Config := a.oauth2Config(nil)
+	oauth2Config := a.oauth2Config2(nil,originUri)
 	switch r.Method {
 	case http.MethodGet:
 		// Authorization redirect callback from OAuth2 auth flow.
@@ -335,5 +357,97 @@ func (a *app) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//authCodeURL := "http://172.17.241.134:5555/test/biz/callback"
+	//if accessToken != "" {
+	//	authCodeURL = authCodeURL + "?accessToken=" + accessToken
+	//}
+	//http.Redirect(w, r, authCodeURL, http.StatusSeeOther)
 	renderToken(w, a.redirectURI, rawIDToken, accessToken, token.RefreshToken, buff.String())
 }
+
+
+
+
+func (a *app) callbackBiz(w http.ResponseWriter, r *http.Request) {
+	accessToken :=r.URL.Query().Get("accessToken")
+	renderBiz(w, "rawIDToken", accessToken, "RefreshToken")
+}
+
+func (a *app) loginPage(w http.ResponseWriter, r *http.Request) {
+	//a.provider.
+	originUri :=r.Header.Get("origin_uri")
+	if originUri == "" {
+		originUri =r.URL.Query().Get("origin_uri")
+	}
+	client := newClient()
+	req, err := http.NewRequest("GET", a.IssuerURL+"/connector/list", nil)
+	if err != nil {
+		return
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		_, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return
+		}
+		return
+	}
+	var u ConnInfos
+	if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
+		return
+	}
+	for _,c := range u.Data {
+		c.URL = a.authConn(exampleAppState,c.ID,originUri)
+	}
+	renderLogin(w,u.Data,a.IssuerURL)
+}
+
+func newClient() *http.Client {
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	return &http.Client{Transport: tr}
+}
+
+type ConnInfos struct {
+	Path	string
+	Data  []*ConnectorInfo `json:"data"`
+}
+type ConnectorInfo struct {
+	ID   string
+	Name string
+	URL  string
+	Type string
+}
+
+func (a *app)authConn(state string,conId string,originUri string)string{
+	authURL := path.Join(a.IssuerURL, "/auth",conId)
+	u, _ := url.Parse(authURL)
+	q := u.Query()
+	q.Set("client_id", a.clientID)
+	q.Set("client_secret", a.clientSecret)
+	q.Set("state", state)
+	q.Set("response_type", "code")
+	q.Set("redirect_uri", RedirectUri(a.redirectURI,originUri))
+	var scopes []string
+	scopes = append(scopes, "openid", "profile", "email","offline_access")
+	q.Set("scope", strings.Join(scopes, " "))
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func RedirectUri(redirectURI string,originUri string)string{
+	u, _ := url.Parse(redirectURI)
+	q := u.Query()
+	if originUri != "" {
+		q.Set("origin_uri", originUri)
+	}
+	u.RawQuery = q.Encode()
+	return  u.String()
+}
+
